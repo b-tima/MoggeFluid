@@ -13,6 +13,10 @@
 
 #define PARTICLE_RADIUS (10)
 
+#define NUM_PARTICLES (100)
+
+#define PARTICLE_SPACING (20)
+
 /**********************
  *      TYPEDEFS
  **********************/
@@ -24,17 +28,17 @@
 static tVector2 translate_position(tVector2 vector);
 static void draw_particle(tVector2 vector);
 
-static void resolve_collision();
+static void resolve_edge_collision(tVector2* local_position, tVector2* local_velocity);
 
 /**********************
  *  STATIC VARIABLES
  **********************/
 
-static float gravity = 100;
+static float gravity = 1000;
 static float collision_damping = 0.6;
 
-static tVector2 position;
-static tVector2 velocity;
+static tVector2 position[NUM_PARTICLES];
+static tVector2 velocity[NUM_PARTICLES];
 
 const tVector2 bounding_box = {
 	.x = SCREEN_HEIGHT,
@@ -50,19 +54,27 @@ const tVector2 bounding_box = {
  **********************/
 
 void fluidSim_init() {
-    position = VECTOR2_ZERO;
-    velocity = VECTOR2_ZERO;
+	int particles_per_row = sqrt(NUM_PARTICLES);
+	int particles_per_column = ((NUM_PARTICLES - 1) / particles_per_row) + 1;
+	double spacing = PARTICLE_RADIUS * 2 + PARTICLE_SPACING;
+
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		double x = (i % particles_per_row - particles_per_row / 2 + 0.5) * spacing;
+		double y = (i / particles_per_row - particles_per_column / 2 + 0.5) * spacing;
+		position[i].x = x;
+		position[i].y = y;
+	}
 }
 
 void fluidSim_update() {
-    velocity.y -= gravity * TIME_DELTA_S;
-    position.y += velocity.y * TIME_DELTA_S;
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		velocity[i].y -= gravity * TIME_DELTA_S;
+		position[i].y += velocity[i].y * TIME_DELTA_S;
 
-	printf("y = %f\n", velocity.y);
+		resolve_edge_collision(&position[i], &velocity[i]);
 
-	resolve_collision();
-
-    draw_particle(position);
+		draw_particle(position[i]);
+	}
 }
 
 /**********************
@@ -76,21 +88,21 @@ static tVector2 translate_position(tVector2 vector) {
 }
 
 static void draw_particle(tVector2 vector) {
-    tVector2 tranpos = translate_position(position);
+    tVector2 tranpos = translate_position(vector);
     drawing_drawCircle(VECTOR2_TO_INT(tranpos), PARTICLE_RADIUS,
                        COLOR_LIGHTBLUE);
 }
 
-static void resolve_collision(){
+static void resolve_edge_collision(tVector2* local_position, tVector2* local_velocity){
 	tVector2 half_bounds = VECTOR2_SCALED(bounding_box, 0.5);
 
-	if(abs(position.x) + PARTICLE_RADIUS > half_bounds.x){
-		position.x = (half_bounds.x - PARTICLE_RADIUS) * NUM_SIGN(position.x);
-		velocity.x *= -1 * collision_damping;
+	if(abs(local_position->x) + PARTICLE_RADIUS > half_bounds.x){
+		local_position->x = (half_bounds.x - PARTICLE_RADIUS) * NUM_SIGN(local_position->x);
+		local_velocity->x *= -1 * collision_damping;
 	}
 
-	if(abs(position.y) + PARTICLE_RADIUS > half_bounds.y) {
-		position.y = (half_bounds.y - PARTICLE_RADIUS) * NUM_SIGN(position.y);
-		velocity.y *= -1 * collision_damping;
+	if(abs(local_position->y) + PARTICLE_RADIUS > half_bounds.y) {
+		local_position->y = (half_bounds.y - PARTICLE_RADIUS) * NUM_SIGN(local_position->y);
+		local_velocity->y *= -1 * collision_damping;
 	}
 }
