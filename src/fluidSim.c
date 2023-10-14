@@ -11,13 +11,13 @@
  *      DEFINES
  *********************/
 
-#define PARTICLE_RADIUS (0.1)
+#define PARTICLE_RADIUS (0.02)
 
 #define SCREEN_SCALING (100)
 
-#define NUM_PARTICLES (100)
+#define NUM_PARTICLES (200)
 
-#define PARTICLE_SPACING (1)
+#define PARTICLE_SPACING (0.1)
 
 #define SMOOTHING_RADIUS (1)
 
@@ -25,7 +25,7 @@
  * 	If Set to 1, the starting positions will be randomized in the bounding box.
  * 	If set to 0, the starting positions will be in a grid in the center.
  */
-#define RANDOMIZE_STARTING_POSITIONS (1)
+#define RANDOMIZE_STARTING_POSITIONS (0)
 
 /**
  * 	If set to 1, the simulation will not be started after initialiation.
@@ -53,18 +53,27 @@ static void draw_particle(tVector2 vector);
 
 static void resolve_edge_collision(tVector2* local_position, tVector2* local_velocity);
 
+static tVector2 get_random_direction();
+
+static void update_densites();
 static double calculate_density(tVector2 sample_point);
+static double convert_density_to_pressure(double density);
+static tVector2 calculate_pressure_force(int particle_index);
 static double smoothing_kernel(double radius, float distance);
+static double smoothing_kernel_derivative(double radius, double distance);
 
 /**********************
  *  STATIC VARIABLES
  **********************/
 
-static float gravity = 10;
-static float collision_damping = 0.6;
+const double gravity = 10;
+const double collision_damping = 0.6;
+static double target_density = 10;
+static double pressure_multiplier = 1;
 
 static tVector2 position[NUM_PARTICLES];
 static tVector2 velocity[NUM_PARTICLES];
+static double particle_density[NUM_PARTICLES];
 
 const tVector2 bounding_box = {
 	.x = SCREEN_WIDTH / SCREEN_SCALING,
@@ -80,6 +89,10 @@ const tVector2 bounding_box = {
  **********************/
 
 void fluidSim_init() {
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		particle_density[i] = 0;
+	}
+
 #if !RANDOMIZE_STARTING_POSITIONS
 	int particles_per_row = sqrt(NUM_PARTICLES);
 	int particles_per_column = ((NUM_PARTICLES - 1) / particles_per_row) + 1;
@@ -126,9 +139,16 @@ void fluidSim_update() {
 #endif
 
 #if !DONT_START_SIMULARITON
+	update_densites();
+
 	for(int i = 0; i < NUM_PARTICLES; i++){
-		velocity[i].y -= gravity * TIME_DELTA_S;
-		position[i].y += velocity[i].y * TIME_DELTA_S;
+		tVector2 pressure_force = calculate_pressure_force(i);
+		tVector2 pressure_acceleration = VECTOR2_SCALED(pressure_force, 1/particle_density[i]);
+		velocity[i] = VECTOR2_SCALED(pressure_acceleration, TIME_DELTA_S);
+	}
+
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		position[i] = VECTOR2_ADD(position[i], velocity[i]);
 
 		resolve_edge_collision(&position[i], &velocity[i]);
 
@@ -191,6 +211,19 @@ static void resolve_edge_collision(tVector2* local_position, tVector2* local_vel
 	}
 }
 
+static tVector2 get_random_direction(){
+	double x = (double)((double)rand()) / RAND_MAX;
+	double y = (double)((double)rand()) / RAND_MAX;
+	tVector2 direction = VECTOR2_CREATE(x, y);
+	return VECTOR2_SCALED(direction, VECTOR2_MAG(direction));
+}
+
+static void update_densites(){
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		particle_density[i] = calculate_density(position[i]);
+	}
+}
+
 static double calculate_density(tVector2 sample_point){
 	double density = 0;
 	const double mass = 1;
@@ -198,7 +231,6 @@ static double calculate_density(tVector2 sample_point){
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		tVector2 diff = VECTOR2_SUB(position[i], sample_point);
 		double distance = VECTOR2_MAG(diff);
-
 		double influence = smoothing_kernel(SMOOTHING_RADIUS, distance);
 		density += mass * influence;
 	}
@@ -206,8 +238,51 @@ static double calculate_density(tVector2 sample_point){
 	return density;
 }
 
+static double convert_density_to_pressure(double density){
+	double density_error = density - target_density;
+	double pressure = density_error * pressure_multiplier;
+	return pressure;
+}
+
+static tVector2 calculate_pressure_force(int particle_index){
+	tVector2 pressure_gradient = VECTOR2_ZERO;
+	const double mass = 1;
+
+	for(int other_particle_index = 0; other_particle_index < NUM_PARTICLES; other_particle_index++){
+		if(other_particle_index == particle_index){
+			continue;
+		}
+		tVector2 diff = VECTOR2_SUB(position[other_particle_index], position[particle_index]);
+		double distance = VECTOR2_MAG(diff);
+		tVector2 direction;
+		if(distance == 0){
+			direction = get_random_direction();
+		}
+		else{
+			direction = VECTOR2_SCALED(VECTOR2_SUB(position[other_particle_index], position[particle_index]), 1/distance);
+		}
+		double slope = smoothing_kernel_derivative(distance, SMOOTHING_RADIUS);
+		double density = calculate_density(position[other_particle_index]);
+		double pressure_gradient_scaler = -convert_density_to_pressure(density) * slope * mass / density;
+
+		pressure_gradient = VECTOR2_ADD(pressure_gradient, VECTOR2_SCALED(direction, -pressure_gradient_scaler));
+	}
+
+	return pressure_gradient;
+}
+
 static double smoothing_kernel(double radius, float distance){
 	double value = NUM_MAX(0, radius * radius - distance * distance);
 	const double volume = NUM_PI * pow(radius, 8) / 4;
 	return value * value * value / volume;
+}
+
+static double smoothing_kernel_derivative(double radius, double distance){
+	if(distance >= radius){
+		return 0;
+	}	
+
+	float f = radius * radius - distance * distance;
+	float scale = -24 / (NUM_PI * pow(radius, 8));
+	return scale * distance * f * f;
 }

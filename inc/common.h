@@ -52,6 +52,10 @@ typedef struct{
 #define VECTOR2_ZERO ((tVector2){0, 0})
 #endif
 
+#ifndef VECTOR2_CREATE
+#define VECTOR2_CREATE(x, y) ((tVector2){x,y})
+#endif
+
 #ifndef VECTOR2_ADD
 #define VECTOR2_ADD(v1, v2) ((tVector2){(v1.x + v2.x), (v1.y + v2.y)})
 #endif
@@ -103,6 +107,22 @@ typedef struct{
 /**********************
  *      CONSTANTS
  **********************/
+
+#ifndef VECTOR2_UP
+#define VECTOR2_UP VECTOR2_CREATE(0, 1)
+#endif
+
+#ifndef VECTOR2_DOWN
+#define VECTOR2_DOWN VECTOR2_CREATE(0, -1)
+#endif
+
+#ifndef VECTOR2_RIGHT
+#define VECTOR2_RIGHT VECTOR2_CREATE(1, 0)
+#endif
+
+#ifndef VECTOR2_LEFT
+#define VECTOR2_LEFT VECTOR2_CREATE(-1, 0)
+#endif
 
 #ifndef COLOR_RED
 #define COLOR_RED ((tColor){255, 0, 0})

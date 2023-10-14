@@ -26,7 +26,7 @@ INCLUDE_DIRS := -I./inc/ -I/usr/include/SDL2
 
 LDFLAGS := `sdl2-config --cflags --libs` -lSDL2
 BUILDFLAGS := -O2 -pedantic -Wall -Wshadow -Wpointer-arith -Wcast-qual
-CCFLAGS := -Wall $(INCLUDE_DIRS)
+CCFLAGS := -Wall $(INCLUDE_DIRS) -lm
 CCOBJFLAGS := $(CCFLAGS) -c
 DBGFLAGS := -g
 
