@@ -17,6 +17,18 @@
 
 #define PARTICLE_SPACING (20)
 
+/**
+ * 	If Set to 1, the starting positions will be randomized in the bounding box.
+ * 	If set to 0, the starting positions will be in a grid in the center.
+ */
+#define RANDOMIZE_STARTING_POSITIONS (1)
+
+/**
+ * 	If set to 1, the simulation will not be started after initialiation.
+ * 	If set to 0, the simulation will start
+ */
+#define DONT_START_SIMULARITON (0)
+
 /**********************
  *      TYPEDEFS
  **********************/
@@ -41,7 +53,7 @@ static tVector2 position[NUM_PARTICLES];
 static tVector2 velocity[NUM_PARTICLES];
 
 const tVector2 bounding_box = {
-	.x = SCREEN_HEIGHT,
+	.x = SCREEN_WIDTH,
 	.y = SCREEN_HEIGHT
 };
 
@@ -54,6 +66,7 @@ const tVector2 bounding_box = {
  **********************/
 
 void fluidSim_init() {
+#if !RANDOMIZE_STARTING_POSITIONS
 	int particles_per_row = sqrt(NUM_PARTICLES);
 	int particles_per_column = ((NUM_PARTICLES - 1) / particles_per_row) + 1;
 	double spacing = PARTICLE_RADIUS * 2 + PARTICLE_SPACING;
@@ -64,9 +77,18 @@ void fluidSim_init() {
 		position[i].x = x;
 		position[i].y = y;
 	}
+#else
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		double x = bounding_box.x * (double)(((double)rand()) / RAND_MAX) - (bounding_box.x / 2);
+		double y = bounding_box.y * (double)(((double)rand()) / RAND_MAX) - (bounding_box.y / 2);
+		position[i].x = x;
+		position[i].y = y;
+	}
+#endif
 }
 
 void fluidSim_update() {
+#if !DONT_START_SIMULARITON
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		velocity[i].y -= gravity * TIME_DELTA_S;
 		position[i].y += velocity[i].y * TIME_DELTA_S;
@@ -75,6 +97,11 @@ void fluidSim_update() {
 
 		draw_particle(position[i]);
 	}
+#else
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		draw_particle(position[i]);
+	}
+#endif
 }
 
 /**********************
