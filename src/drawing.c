@@ -77,6 +77,16 @@ void drawing_drawPixel(tVector2_int pos, tColor_a color){
 	SDL_RenderDrawPoint(drawing_Renderer, pos.x, pos.y);
 }
 
+void drawing_drawRect(tVector2_int start, tVector2_int end, tColor_a color){
+	set_color_a(color);
+	SDL_Rect rect;
+	rect.h = end.y - start.y;
+	rect.w = end.x - start.x;
+	rect.x = start.x;
+	rect.y = start.y;
+	SDL_RenderFillRect(drawing_Renderer, &rect);
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/

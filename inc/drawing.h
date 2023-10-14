@@ -39,6 +39,8 @@ void drawing_drawCircle(tVector2_int pos, int32_t radius, tColor color);
 
 void drawing_drawPixel(tVector2_int pos, tColor_a color);
 
+void drawing_drawRect(tVector2_int start, tVector2_int end, tColor_a color);
+
 /**********************
  *  GLOBAL VARIABLES
  **********************/
