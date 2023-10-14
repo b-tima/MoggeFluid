@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "gcc debug",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/debug/example_project",
+            "args": ["${input:arg}"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Build debug",
+        }
+    ],
+	"inputs": [
+		{
+			"type": "promptString",
+			"id": "arg",
+			"description": "Enter test string",
+			"default": "test"
+		}
+	],
+}
