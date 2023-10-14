@@ -28,6 +28,8 @@ void fluidSim_init();
 
 void fluidSim_update();
 
+void fluidSim_onClick(tVector2_int pos);
+
 /**********************
  *  GLOBAL VARIABLES
  **********************/

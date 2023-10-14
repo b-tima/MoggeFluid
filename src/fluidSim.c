@@ -11,11 +11,15 @@
  *      DEFINES
  *********************/
 
-#define PARTICLE_RADIUS (10)
+#define PARTICLE_RADIUS (0.1)
+
+#define SCREEN_SCALING (100)
 
 #define NUM_PARTICLES (100)
 
-#define PARTICLE_SPACING (20)
+#define PARTICLE_SPACING (0.1)
+
+#define SMOOTHING_RADIUS (2)
 
 /**
  * 	If Set to 1, the starting positions will be randomized in the bounding box.
@@ -27,7 +31,7 @@
  * 	If set to 1, the simulation will not be started after initialiation.
  * 	If set to 0, the simulation will start
  */
-#define DONT_START_SIMULARITON (0)
+#define DONT_START_SIMULARITON (1)
 
 /**********************
  *      TYPEDEFS
@@ -37,24 +41,28 @@
  *  STATIC PROTOTYPES
  **********************/
 
-static tVector2 translate_position(tVector2 vector);
+static tVector2 translate_global_position(tVector2_int vector);
+static tVector2 translate_local_position(tVector2 vector);
 static void draw_particle(tVector2 vector);
 
 static void resolve_edge_collision(tVector2* local_position, tVector2* local_velocity);
+
+static double calculate_density(tVector2 sample_point);
+static double smoothing_kernel(double radius, float distance);
 
 /**********************
  *  STATIC VARIABLES
  **********************/
 
-static float gravity = 1000;
+static float gravity = 1;
 static float collision_damping = 0.6;
 
 static tVector2 position[NUM_PARTICLES];
 static tVector2 velocity[NUM_PARTICLES];
 
 const tVector2 bounding_box = {
-	.x = SCREEN_WIDTH,
-	.y = SCREEN_HEIGHT
+	.x = SCREEN_WIDTH / SCREEN_SCALING,
+	.y = SCREEN_HEIGHT / SCREEN_SCALING
 };
 
 /**********************
@@ -100,36 +108,77 @@ void fluidSim_update() {
 #else
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		draw_particle(position[i]);
+
+		tVector2 sample_point = {
+			.x = 0,
+			.y = 0
+		};
 	}
 #endif
+}
+
+void fluidSim_onClick(tVector2_int pos){
+	tVector2 local_pos = translate_global_position(pos);
+	double density = calculate_density(local_pos);
+	printf("density = %f\n", density);
 }
 
 /**********************
  *   STATIC FUNCTIONS
  **********************/
 
-static tVector2 translate_position(tVector2 vector) {
-    tVector2 translated_vector = {.x = vector.x + (SCREEN_WIDTH / 2),
-                                  .y = (SCREEN_HEIGHT / 2) - vector.y};
+static tVector2 translate_global_position(tVector2_int vector){
+	tVector2 translated_vector = {
+		.x = ((double)vector.x) / SCREEN_SCALING - bounding_box.x / 2,
+		.y = -((double)vector.y) / SCREEN_SCALING + bounding_box.y / 2
+	};
+
+	return translated_vector;
+}
+
+static tVector2 translate_local_position(tVector2 vector) {
+    tVector2 translated_vector = {.x = vector.x * SCREEN_SCALING + (SCREEN_WIDTH / 2),
+                                  .y = (SCREEN_HEIGHT / 2) - vector.y * SCREEN_SCALING};
     return translated_vector;
 }
 
 static void draw_particle(tVector2 vector) {
-    tVector2 tranpos = translate_position(vector);
-    drawing_drawCircle(VECTOR2_TO_INT(tranpos), PARTICLE_RADIUS,
+    tVector2 tranpos = translate_local_position(vector);
+    drawing_drawCircle(VECTOR2_TO_INT(tranpos), PARTICLE_RADIUS * SCREEN_SCALING,
                        COLOR_LIGHTBLUE);
 }
 
 static void resolve_edge_collision(tVector2* local_position, tVector2* local_velocity){
 	tVector2 half_bounds = VECTOR2_SCALED(bounding_box, 0.5);
 
-	if(abs(local_position->x) + PARTICLE_RADIUS > half_bounds.x){
-		local_position->x = (half_bounds.x - PARTICLE_RADIUS) * NUM_SIGN(local_position->x);
+	if(NUM_ABS(local_position->x) + PARTICLE_RADIUS > half_bounds.x){
+		local_position->x = (half_bounds.x + PARTICLE_RADIUS) * NUM_SIGN(local_position->x);
 		local_velocity->x *= -1 * collision_damping;
 	}
 
-	if(abs(local_position->y) + PARTICLE_RADIUS > half_bounds.y) {
+	if(NUM_ABS(local_position->y) + PARTICLE_RADIUS > half_bounds.y) {
 		local_position->y = (half_bounds.y - PARTICLE_RADIUS) * NUM_SIGN(local_position->y);
 		local_velocity->y *= -1 * collision_damping;
 	}
+}
+
+static double calculate_density(tVector2 sample_point){
+	double density = 0;
+	const double mass = 1;
+
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		tVector2 diff = VECTOR2_SUB(position[i], sample_point);
+		double distance = VECTOR2_MAG(diff);
+
+		double influence = smoothing_kernel(SMOOTHING_RADIUS, distance);
+		density += mass * influence;
+	}
+
+	return density;
+}
+
+static double smoothing_kernel(double radius, float distance){
+	double value = NUM_MAX(0, radius * radius - distance * distance);
+	const double volume = NUM_PI * pow(radius, 8) / 4;
+	return value * value * value / volume;
 }
