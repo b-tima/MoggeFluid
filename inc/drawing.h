@@ -37,6 +37,8 @@ void drawing_delay(uint32_t delay);
 
 void drawing_drawCircle(tVector2_int pos, int32_t radius, tColor color);
 
+void drawing_drawPixel(tVector2_int pos, tColor_a color);
+
 /**********************
  *  GLOBAL VARIABLES
  **********************/

@@ -19,6 +19,8 @@
 
 static void set_color(tColor color);
 
+static void set_color_a(tColor_a color);
+
 static void draw_circle(int32_t centreX, int32_t centreY, int32_t radius);
 
 /**********************
@@ -48,6 +50,8 @@ void drawing_init(){
     }
 
     drawing_Renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+	SDL_SetRenderDrawBlendMode(drawing_Renderer, SDL_BLENDMODE_BLEND);
 }
 
 void drawing_clearScreen(){
@@ -68,12 +72,21 @@ void drawing_drawCircle(tVector2_int pos, int32_t radius, tColor color){
 	draw_circle(pos.x, pos.y, radius);
 }
 
+void drawing_drawPixel(tVector2_int pos, tColor_a color){
+	set_color_a(color);
+	SDL_RenderDrawPoint(drawing_Renderer, pos.x, pos.y);
+}
+
 /**********************
  *   STATIC FUNCTIONS
  **********************/
 
 static void set_color(tColor color){
 	SDL_SetRenderDrawColor(drawing_Renderer, color.r, color.g, color.b, 255);
+}
+
+static void set_color_a(tColor_a color){
+	SDL_SetRenderDrawColor(drawing_Renderer, color.r, color.g, color.b, color.a);
 }
 
 static void draw_circle(int32_t centreX, int32_t centreY, int32_t radius){

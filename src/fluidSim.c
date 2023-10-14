@@ -17,9 +17,9 @@
 
 #define NUM_PARTICLES (100)
 
-#define PARTICLE_SPACING (0.1)
+#define PARTICLE_SPACING (1)
 
-#define SMOOTHING_RADIUS (2)
+#define SMOOTHING_RADIUS (1)
 
 /**
  * 	If Set to 1, the starting positions will be randomized in the bounding box.
@@ -31,7 +31,13 @@
  * 	If set to 1, the simulation will not be started after initialiation.
  * 	If set to 0, the simulation will start
  */
-#define DONT_START_SIMULARITON (1)
+#define DONT_START_SIMULARITON (0)
+
+/**
+ *	If set to 1, the simulation will draw the density
+ * 	If set to 0, the simulation will not draw the density
+ */
+#define DRAW_DENSITY (0)
 
 /**********************
  *      TYPEDEFS
@@ -54,7 +60,7 @@ static double smoothing_kernel(double radius, float distance);
  *  STATIC VARIABLES
  **********************/
 
-static float gravity = 1;
+static float gravity = 10;
 static float collision_damping = 0.6;
 
 static tVector2 position[NUM_PARTICLES];
@@ -96,6 +102,29 @@ void fluidSim_init() {
 }
 
 void fluidSim_update() {
+#if DRAW_DENSITY
+	// Calculate density field...
+	for(int x = 0; x < SCREEN_WIDTH; x++){
+		for(int y = 0; y < SCREEN_HEIGHT; y++){
+			tVector2_int global = {
+				.x = x,
+				.y = y
+			};
+
+			tVector2 pos = translate_global_position(global);
+
+			double density = calculate_density(pos);
+			
+			double a = 255 * NUM_MIN(1, density / 3);
+			tColor_a color = COLOR_WITH_A(COLOR_LIGHTBLUE, (uint8_t)a);
+			if (a < 20){
+				continue;
+			}
+			drawing_drawPixel(global, color);
+		}
+	}
+#endif
+
 #if !DONT_START_SIMULARITON
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		velocity[i].y -= gravity * TIME_DELTA_S;

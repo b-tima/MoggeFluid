@@ -37,6 +37,13 @@ typedef struct {
     uint8_t b;
 } tColor;
 
+typedef struct{
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+	uint8_t a;
+} tColor_a;
+
 /**********************
  *      MACROS
  **********************/
@@ -89,6 +96,10 @@ typedef struct {
 #define NUM_PI (3.141592653589793)
 #endif
 
+#ifndef COLOR_WITH_A
+#define COLOR_WITH_A(color, a) ((tColor_a){(color.r), (color.g), (color.b), (a)})
+#endif
+
 /**********************
  *      CONSTANTS
  **********************/
@@ -106,7 +117,7 @@ typedef struct {
 #endif
 
 #ifndef COLOR_LIGHTBLUE
-#define COLOR_LIGHTBLUE ((tColor){68, 85, 90})
+#define COLOR_LIGHTBLUE ((tColor){30,144,255})
 #endif
 
 #endif /* COMMON_H_ */
