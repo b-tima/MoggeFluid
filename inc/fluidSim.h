@@ -1,5 +1,5 @@
-#ifndef EXAMPLE_LIB_H_
-#define EXAMPLE_LIB_H_
+#ifndef FLUIDSIM_H_
+#define FLUIDSIM_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,6 +9,8 @@ extern "C" {
 /*********************
  *      INCLUDES
  *********************/
+
+#include "common.h"
 
 /*********************
  *      DEFINES
@@ -22,9 +24,9 @@ extern "C" {
  * GLOBAL PROTOTYPES
  **********************/
 
-void example_function(char* hello_world);
+void fluidSim_init();
 
-int example_testable_function(int a);
+void fluidSim_update();
 
 /**********************
  *  GLOBAL VARIABLES
@@ -42,4 +44,4 @@ int example_testable_function(int a);
 } /*extern "C"*/
 #endif
 
-#endif /* EXAMPLE_LIB_H_ */
+#endif /* FLUIDSIM_H_ */
