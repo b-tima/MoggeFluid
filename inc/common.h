@@ -109,9 +109,13 @@ inline double NUM_MIN(double n1, double n2){
 }
 
 inline uint32_t combinging_hash(uint32_t n1, uint32_t n2){
-    uint32_t combined = n1 ^ n2;
-    combined = (combined << 5) - combined;
-    return combined;
+	uint32_t a = n1 * 15823;
+	uint32_t b = n2 * 9737333;
+	uint32_t x = (a + b) * (a + b + 1) / 2 + a;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+	x = ((x >> 16) ^ x) * 0x45d9f3b;
+	x = (x >> 16) ^ x;
+	return x;
 }
 
 #ifndef COLOR_WITH_A

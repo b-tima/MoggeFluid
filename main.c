@@ -46,5 +46,7 @@ int main() {
 		drawing_delay(TIME_DELTA);
 	}
 	
+	fluidSim_destroy();
+
     return 0;
 }

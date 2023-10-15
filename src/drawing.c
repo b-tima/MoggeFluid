@@ -4,6 +4,7 @@
 
 #include "drawing.h"
 #include <stdio.h>
+#include <stdbool.h>
 
 /*********************
  *      DEFINES
@@ -69,8 +70,8 @@ void drawing_clearScreen(){
 }
 
 void drawing_drawScreen(){
+	set_color(circle_color);
 	if(num_circle_points > 0){
-		set_color(circle_color);
 		SDL_RenderDrawPoints(drawing_Renderer, circle_points, num_circle_points);
 	}
 	num_circle_points = 0;
@@ -83,13 +84,25 @@ void drawing_delay(uint32_t delay){
 }
 
 void drawing_drawCircle(tVector2_int pos, int32_t radius, tColor color){
-	memcpy(&circle_color, &color, sizeof(tColor));
+	if(num_circle_points == 0){
+		memcpy(&circle_color, &color, sizeof(tColor));
+	}
 	draw_circle(pos.x, pos.y, radius);
 }
 
 void drawing_drawPixel(tVector2_int pos, tColor_a color){
 	set_color_a(color);
 	SDL_RenderDrawPoint(drawing_Renderer, pos.x, pos.y);
+}
+
+void drawing_drawHollowRect(tVector2_int start, tVector2_int end, tColor color){
+	set_color(color);
+	SDL_Rect rect;
+	rect.h = end.y - start.y;
+	rect.w = end.x - start.x;
+	rect.x = start.x;
+	rect.y = start.y;
+	SDL_RenderDrawRect(drawing_Renderer, &rect);
 }
 
 void drawing_drawRect(tVector2_int start, tVector2_int end, tColor_a color){

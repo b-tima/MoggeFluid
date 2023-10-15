@@ -16,7 +16,7 @@
 
 #define NUM_PARTICLES (1000)
 
-#define PARTICLE_SPACING (0.1)
+#define PARTICLE_SPACING (0.04)
 
 #define SMOOTHING_RADIUS (1)
 
@@ -26,7 +26,7 @@
  * 	If Set to 1, the starting positions will be randomized in the bounding box.
  * 	If set to 0, the starting positions will be in a grid in the center.
  */
-#define RANDOMIZE_STARTING_POSITIONS (1)
+#define RANDOMIZE_STARTING_POSITIONS (0)
 
 /**
  * 	If set to 1, the simulation will not be started after initialiation.
@@ -45,7 +45,7 @@
  **********************/
 
 typedef struct{
-	uint32_t key;
+	int key;
 	int index;
 } cell_key_pair;
 
@@ -54,7 +54,7 @@ typedef struct{
  **********************/
 
 static tVector2 translate_global_position(tVector2_int vector);
-static tVector2 translate_local_position(tVector2 vector);
+static tVector2_int translate_local_position(tVector2 vector);
 static void draw_particle(tVector2 vector);
 
 static void resolve_edge_collision(tVector2* local_position, tVector2* local_velocity);
@@ -71,7 +71,8 @@ static double smoothing_kernel_derivative(double radius, double distance);
 
 static int get_cell_key_from_particle(int particle_index);
 static int get_cell_key_from_grid_index(tVector2_int grid);
-static tVector2_int position_to_cell_coordinate(int particle_index);
+static tVector2_int particle_to_cell_coordinate(int particle_index);
+static tVector2_int position_to_cell_coordinate(tVector2 sample_point);
 static int cell_sorting_compare(const void* c1, const void* c2);
 static void update_cell_keys();
 
@@ -80,9 +81,9 @@ static void update_cell_keys();
  **********************/
 
 const double gravity = 10;
-const double collision_damping = 0.9;
+const double collision_damping = 0.5;
 const double target_density = 0.1;
-const double pressure_multiplier = 0.01;
+const double pressure_multiplier = 10;
 const double mass = 1;
 
 static tVector2 position[NUM_PARTICLES];
@@ -95,13 +96,18 @@ const tVector2 bounding_box = {
 	.y = SCREEN_HEIGHT / SCREEN_SCALING
 };
 
-// TODO: Improve hashing to increase performance
 static cell_key_pair* spacial_LUT;
 static int spacial_LUT_rows;
 static int spacial_LUT_cols;
 static int num_spacial_LUT;
 
 static int* spacial_LUT_start_indeces;
+
+
+static int rect_timeout = 0;
+static tVector2_int rect_start[1000];
+static tVector2_int rect_end[1000];
+static int num_rects = 0;
 
 /**********************
  *      MACROS
@@ -117,9 +123,9 @@ void fluidSim_init() {
 		velocity[i] = VECTOR2_ZERO;
 	}
 
-	spacial_LUT_rows = ceil(bounding_box.x / SMOOTHING_RADIUS);
-	spacial_LUT_cols = ceil(bounding_box.y / SMOOTHING_RADIUS);
-	num_spacial_LUT = spacial_LUT_rows * spacial_LUT_cols;
+	spacial_LUT_rows = ceil(bounding_box.y / SMOOTHING_RADIUS);
+	spacial_LUT_cols = ceil(bounding_box.x / SMOOTHING_RADIUS);
+	num_spacial_LUT = NUM_PARTICLES * 10;
 
 	spacial_LUT = (cell_key_pair*) malloc(NUM_PARTICLES * sizeof(cell_key_pair));
 	spacial_LUT_start_indeces = (int*)malloc(num_spacial_LUT * sizeof(int));
@@ -143,6 +149,11 @@ void fluidSim_init() {
 		position[i].y = y;
 	}
 #endif
+}
+
+void fluidSim_destroy(){
+	free(spacial_LUT);
+	free(spacial_LUT_start_indeces);
 }
 
 void fluidSim_update() {
@@ -183,7 +194,7 @@ void fluidSim_update() {
 
 	// Predict future position
 	for(int i = 0; i < NUM_PARTICLES; i++){
-		// This is where we should add gravity...
+		//velocity[i] = VECTOR2_ADD(velocity[i], VECTOR2_SCALED(VECTOR2_DOWN, gravity * TIME_DELTA_S));
 		predicted_position[i] = VECTOR2_ADD(position[i], VECTOR2_SCALED(velocity[i], 100*TIME_DELTA_S));
 	}
 
@@ -205,6 +216,16 @@ void fluidSim_update() {
 		draw_particle(position[i]);
 	}
 
+	if(rect_timeout > 0){
+		for(int i = 0; i < num_rects; i++){
+			drawing_drawHollowRect(rect_start[i], rect_end[i], COLOR_RED);
+		}
+		rect_timeout -= TIME_DELTA;
+	}
+	else{
+		num_rects = 0;
+	}
+
 #else
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		draw_particle(position[i]);
@@ -221,6 +242,70 @@ void fluidSim_onClick(tVector2_int pos){
 	tVector2 local_pos = translate_global_position(pos);
 	double pressure = convert_density_to_pressure(calculate_density(local_pos));
 	printf("pressure = %f\n", pressure);
+
+	// Get all of the cells in a 3x3 grid around the local position
+	num_rects = 0;
+	tVector2_int cell = position_to_cell_coordinate(local_pos);
+	for(int x = -1; x < 2; x++){
+		for(int y = -1; y < 2; y++){
+			tVector2_int new_grid = {
+				.x = cell.x + x,
+				.y = cell.y + y
+			};
+
+			printf("(%d, %d)\n", new_grid.x, new_grid.y);
+			
+			int cell_key = get_cell_key_from_grid_index(new_grid);
+			printf("CELL KEY = %d\n", cell_key);
+
+			int num_particles = 0;
+			for(int i = spacial_LUT_start_indeces[cell_key]; i < NUM_PARTICLES; i++){
+				if(spacial_LUT[i].key != cell_key){
+					break;
+				}
+				num_particles += 1;
+			}
+
+			printf("Num particles in cell = %d\n", num_particles);
+
+			// Find all cells with this cell key
+			for(int i = 0; i < spacial_LUT_cols; i++){
+				for(int j = 0; j < spacial_LUT_rows; j++){
+					tVector2 cell_coord = {
+						.x = i,
+						.y = j
+					};
+
+					if(cell_key == get_cell_key_from_grid_index(VECTOR2_TO_INT(cell_coord))){
+						printf("Found cell with cell key at (%d, %d)!\n", (int)cell_coord.x, (int)cell_coord.y);
+						// Draw a rectangle!
+						cell_coord = VECTOR2_ADD(cell_coord, VECTOR2_SCALED(bounding_box, -0.5));
+						//cell_coord = VECTOR2_ADD(cell_coord, VECTOR2_CREATE(SMOOTHING_RADIUS / 2, SMOOTHING_RADIUS / 2));
+
+						tVector2 cell_end = VECTOR2_ADD(cell_coord, VECTOR2_CREATE(SMOOTHING_RADIUS, SMOOTHING_RADIUS));
+
+						tVector2_int global_start = translate_local_position(cell_coord);
+						tVector2_int global_end = translate_local_position(cell_end);
+						memcpy(&rect_start[num_rects], &global_start, sizeof(tVector2_int));
+						memcpy(&rect_end[num_rects], &global_end, sizeof(tVector2_int));
+						num_rects += 1;
+					}
+				}
+			}
+		}
+		printf("\n");
+	}
+
+	int num_index = 0;
+	for(int i = 0; i < num_spacial_LUT; i++){
+		if (spacial_LUT_start_indeces[i] != -1){
+			num_index += 1;
+		}
+	}
+
+	printf("num_index = %d\n", num_index);
+
+	rect_timeout = 2000;
 }
 
 /**********************
@@ -236,15 +321,15 @@ static tVector2 translate_global_position(tVector2_int vector){
 	return translated_vector;
 }
 
-static tVector2 translate_local_position(tVector2 vector) {
-    tVector2 translated_vector = {.x = vector.x * SCREEN_SCALING + (SCREEN_WIDTH / 2),
+static tVector2_int translate_local_position(tVector2 vector) {
+    tVector2_int translated_vector = {.x = vector.x * SCREEN_SCALING + (SCREEN_WIDTH / 2),
                                   .y = (SCREEN_HEIGHT / 2) - vector.y * SCREEN_SCALING};
     return translated_vector;
 }
 
 static void draw_particle(tVector2 vector) {
-    tVector2 tranpos = translate_local_position(vector);
-    drawing_drawCircle(VECTOR2_TO_INT(tranpos), PARTICLE_RADIUS * SCREEN_SCALING,
+    tVector2_int tranpos = translate_local_position(vector);
+    drawing_drawCircle(tranpos, PARTICLE_RADIUS * SCREEN_SCALING,
                        COLOR_LIGHTBLUE);
 }
 
@@ -301,18 +386,18 @@ static double calculate_shared_pressure(double d1, double d2){
 }
 
 static tVector2 calculate_pressure_force(int particle_index){
-	tVector2_int particle_cell_coord = position_to_cell_coordinate(particle_index);
+	tVector2_int particle_cell_coord = particle_to_cell_coordinate(particle_index);
 	double sqr_radius = SMOOTHING_RADIUS * SMOOTHING_RADIUS;
 
 	tVector2 pressure_gradient = VECTOR2_ZERO;
 
-	// TODO: this doesnt work!
 	for(int x = -1; x < 2; x++){
 		for(int y = -1; y < 2; y++){
 			tVector2_int grid = (tVector2_int){
 				.x = particle_cell_coord.x + x,
 				.y = particle_cell_coord.y + y
 			};
+
 			int key = get_cell_key_from_grid_index(grid);
 			int cell_start_index = spacial_LUT_start_indeces[key];
 
@@ -321,15 +406,15 @@ static tVector2 calculate_pressure_force(int particle_index){
 			}
 
 			for(int i = cell_start_index; i < NUM_PARTICLES; i++){
-				if(spacial_LUT[cell_start_index].key != key){
+				if(spacial_LUT[i].key != key){
 					break;
 				}
 
-				if(spacial_LUT[cell_start_index].index == particle_index){
+				if(spacial_LUT[i].index == particle_index){
 					continue;
 				}
 
-				int other_particle_index = spacial_LUT[cell_start_index].index;
+				int other_particle_index = spacial_LUT[i].index;
 				tVector2 diff = VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]);
 				double sqr_distance = VECTOR2_SQR_MAG(VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]));
 
@@ -360,8 +445,10 @@ static double smoothing_kernel(double distance, float radius){
 		return 0;
 	}
 
-	float volume = (NUM_PI * pow(radius, 4)) / 6;
-	return (radius - distance) * (radius - distance) / volume;
+	double radius_4 = radius * radius * radius * radius;
+
+	double volume = (NUM_PI * radius_4) / 6;
+	return NUM_MAX(0, (radius - distance) * (radius - distance) / volume);
 }
 
 static double smoothing_kernel_derivative(double distance, double radius){
@@ -369,24 +456,30 @@ static double smoothing_kernel_derivative(double distance, double radius){
 		return 0;
 	}
 
-	float scale = 12 / (pow(radius, 4) * NUM_PI);
+	double radius_4 = radius * radius * radius * radius;
+
+	double scale = 12 / (radius_4 * NUM_PI);
 	return (distance - radius) * scale;
 }
 
 static int get_cell_key_from_particle(int particle_index){
 	// Map particle position to a cell
-	tVector2_int coord = position_to_cell_coordinate(particle_index);
-	uint32_t key = get_cell_key_from_grid_index(coord);
+	tVector2_int coord = particle_to_cell_coordinate(particle_index);
+	int key = get_cell_key_from_grid_index(coord);
 	return key;
 }
 
 static int get_cell_key_from_grid_index(tVector2_int grid){
-	return combinging_hash(grid.x, grid.y) % NUM_PARTICLES;
+	return combinging_hash(grid.x, grid.y) % num_spacial_LUT;
 }
 
-static tVector2_int position_to_cell_coordinate(int particle_index){
-	uint32_t x = (uint32_t)floor(predicted_position[particle_index].x / SMOOTHING_RADIUS);
-	uint32_t y = (uint32_t)floor(predicted_position[particle_index].y / SMOOTHING_RADIUS);
+static tVector2_int particle_to_cell_coordinate(int particle_index){
+	return position_to_cell_coordinate(predicted_position[particle_index]);
+}
+
+static tVector2_int position_to_cell_coordinate(tVector2 sample_point){
+	uint32_t x = (uint32_t)floor(sample_point.x / SMOOTHING_RADIUS) + bounding_box.x / 2;
+	uint32_t y = (uint32_t)floor(sample_point.y / SMOOTHING_RADIUS) + bounding_box.y / 2;
 
 	return (tVector2_int){
 		.x = x,
@@ -398,13 +491,7 @@ static int cell_sorting_compare(const void* c1, const void* c2){
 	const cell_key_pair* p1 = (const cell_key_pair*)c1;
 	const cell_key_pair* p2 = (const cell_key_pair*)c2;
 
-	if(p1->key < p2->key){
-		return -1;
-	}
-	else if(p1->key > p2->key){
-		return 1;
-	}
-	return 0;
+	return p1->key - p2->key;
 }
 
 static void update_cell_keys(){
@@ -414,18 +501,16 @@ static void update_cell_keys(){
 			.key = cell_key,
 			.index = i
 		};
+		spacial_LUT_start_indeces[i] = -1;
 	}
 
-	qsort(spacial_LUT, NUM_PARTICLES, sizeof(cell_key_pair), cell_sorting_compare);
+	qsort((void*)spacial_LUT, NUM_PARTICLES, sizeof(cell_key_pair), cell_sorting_compare);
 
 	for(int i = 0; i < NUM_PARTICLES; i++){
-		uint32_t prev_key = i == 0 ? -1 : spacial_LUT[i - 1].key;
-		if(spacial_LUT[i].key != prev_key){
-			prev_key = spacial_LUT[i].key;
+		int key = spacial_LUT[i].key;
+		int prev_key = i == 0 ? -1 : spacial_LUT[i - 1].key;
+		if(key != prev_key){
 			spacial_LUT_start_indeces[spacial_LUT[i].key] = i;
-		}
-		else{
-			spacial_LUT_start_indeces[i] = -1;
 		}
 	}
 }

@@ -26,6 +26,8 @@ extern "C" {
 
 void fluidSim_init();
 
+void fluidSim_destroy();
+
 void fluidSim_update();
 
 void fluidSim_onClick(tVector2_int pos);
