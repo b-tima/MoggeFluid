@@ -21,6 +21,7 @@
 #define PARTICLE_SPACING (0.04)
 
 #define SMOOTHING_RADIUS (0.3)
+#define VISCOSITY_RADIUS (1)
 
 #define SCREEN_SCALING (100)
 
@@ -92,16 +93,16 @@ static void update_cell_keys();
  *  STATIC VARIABLES
  **********************/
 
-const double gravity = 0.1;
+const double gravity = 0;
 const double collision_damping = 0.1;
 const double target_density = 10;
-const double pressure_multiplier = 2;
+const double pressure_multiplier = 2.3;
 const double mass = 0.1;
 
-const double interaction_strenght = -0.08;
+const double interaction_strenght = 0.08;
 const double interaction_radius = 2;
 
-const double viscosity_strenght = 0;
+const double viscosity_strenght = 1;
 
 static tVector2 position[NUM_PARTICLES];
 static tVector2 predicted_position[NUM_PARTICLES];
@@ -193,7 +194,7 @@ void fluidSim_update() {
 				density = 0;
 			}
 
-			double a = 255 * NUM_MIN(1, density);
+			double a = 255 * NUM_MIN(1, density/100);
 			tColor_a color = COLOR_WITH_A(COLOR_LIGHTBLUE, (uint8_t)a);
 
 			tVector2_int start = {
@@ -221,12 +222,24 @@ void fluidSim_update() {
 	update_cell_keys();
 	update_densites();
 
+	double largest_pressure = 0;
+	double largest_vis = 0;
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		tVector2 pressure_force = calculate_pressure_force(i);
 		tVector2 viscosity_force = calculate_viscosity_force(i);
 		tVector2 particle_acceleration = VECTOR2_SCALED(VECTOR2_ADD(pressure_force, viscosity_force), 1/particle_density[i]);
 		velocity[i] = VECTOR2_ADD(velocity[i], VECTOR2_SCALED(particle_acceleration, TIME_DELTA_S));
 		velocity[i] = VECTOR2_ADD(velocity[i], additional_force[i]);
+
+		double mag_p = VECTOR2_MAG(pressure_force);
+		double mag_v = VECTOR2_MAG(viscosity_force);
+		if(mag_p > largest_pressure){
+			largest_pressure = mag_p;
+		}
+
+		if(mag_v > largest_vis){
+			largest_vis = mag_v;
+		}
 
 		additional_force[i] = VECTOR2_ZERO;
 	}
@@ -536,15 +549,15 @@ static tVector2 calculate_viscosity_force(int particle_index){
 		tVector2 diff = VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]);
 		double distance = VECTOR2_MAG(diff);
 
-		double influence = viscosity_kernel(distance, SMOOTHING_RADIUS);
+		double influence = viscosity_kernel(distance, VISCOSITY_RADIUS);
 
-		force = VECTOR2_ADD(force, 
+		tVector2 f = VECTOR2_ADD(force, 
 			VECTOR2_SUB(
 				velocity[other_particle_index],
 				velocity[particle_index]
 			)
 		);
-		force = VECTOR2_SCALED(force, influence);
+		force = VECTOR2_SCALED(f, influence);
 	}
 
 	return VECTOR2_SCALED(force, viscosity_strenght);
