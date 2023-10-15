@@ -95,7 +95,7 @@ static void update_cell_keys();
  *  STATIC VARIABLES
  **********************/
 
-const double gravity = 0.1;
+const double gravity = 0;
 const double collision_damping = 0.1;
 const double target_density = 10;
 const double pressure_multiplier = 2.3;
