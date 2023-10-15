@@ -95,7 +95,7 @@ static void update_cell_keys();
  *  STATIC VARIABLES
  **********************/
 
-const double gravity = 0;
+const double gravity = 0.1;
 const double collision_damping = 0.1;
 const double target_density = 10;
 const double pressure_multiplier = 2.3;
@@ -278,8 +278,6 @@ void fluidSim_update() {
 
 void fluidSim_onClick(tVector2_int pos){
 	tVector2 local_pos = translate_global_position(pos);
-	double density = calculate_density(local_pos);
-	printf("density = %f\n", density);
 
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		additional_force[i] = interaction_force(local_pos, interaction_radius, interaction_strenght, i);
