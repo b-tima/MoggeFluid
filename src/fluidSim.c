@@ -4,6 +4,8 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <omp.h>
 
 #include "fluidSim.h"
 #include "drawing.h"
@@ -14,11 +16,11 @@
 
 #define PARTICLE_RADIUS (0.04)
 
-#define NUM_PARTICLES (1000)
+#define NUM_PARTICLES (2000)
 
 #define PARTICLE_SPACING (0.04)
 
-#define SMOOTHING_RADIUS (1)
+#define SMOOTHING_RADIUS (0.3)
 
 #define SCREEN_SCALING (100)
 
@@ -39,6 +41,12 @@
  * 	If set to 0, the simulation will not draw the density
  */
 #define DRAW_DENSITY (0)
+
+/**
+ * 	If set to 1, the cells around the mouse will be drawn on mouse click
+ * 	If set to 0, the cells will not be drawn
+ */
+#define DRAW_CELLS_ON_MOUSE_CLICK (0)
 
 /**********************
  *      TYPEDEFS
@@ -62,12 +70,16 @@ static void resolve_edge_collision(tVector2* local_position, tVector2* local_vel
 static tVector2 get_random_direction();
 
 static void update_densites();
+static tVector2 interaction_force(tVector2 input_pos, double radius, double strength, int particle_index);
 static double calculate_density(tVector2 sample_point);
 static double convert_density_to_pressure(double density);
 static double calculate_shared_pressure(double d1, double d2);
+static void get_close_particles(int particle_index, int *particles, int* num_particles);
 static tVector2 calculate_pressure_force(int particle_index);
-static double smoothing_kernel(double radius, float distance);
+static tVector2 calculate_viscosity_force(int particle_index);
+static double smoothing_kernel(double radius, double distance);
 static double smoothing_kernel_derivative(double radius, double distance);
+static double viscosity_kernel(double radius, double distance);
 
 static int get_cell_key_from_particle(int particle_index);
 static int get_cell_key_from_grid_index(tVector2_int grid);
@@ -80,15 +92,21 @@ static void update_cell_keys();
  *  STATIC VARIABLES
  **********************/
 
-const double gravity = 10;
-const double collision_damping = 0.5;
-const double target_density = 0.1;
-const double pressure_multiplier = 10;
-const double mass = 1;
+const double gravity = 0.1;
+const double collision_damping = 0.1;
+const double target_density = 10;
+const double pressure_multiplier = 2;
+const double mass = 0.1;
+
+const double interaction_strenght = -0.08;
+const double interaction_radius = 2;
+
+const double viscosity_strenght = 0;
 
 static tVector2 position[NUM_PARTICLES];
 static tVector2 predicted_position[NUM_PARTICLES];
 static tVector2 velocity[NUM_PARTICLES];
+static tVector2 additional_force[NUM_PARTICLES];
 static double particle_density[NUM_PARTICLES];
 
 const tVector2 bounding_box = {
@@ -121,6 +139,7 @@ void fluidSim_init() {
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		particle_density[i] = 0;
 		velocity[i] = VECTOR2_ZERO;
+		additional_force[i] = VECTOR2_ZERO;
 	}
 
 	spacial_LUT_rows = ceil(bounding_box.y / SMOOTHING_RADIUS);
@@ -194,8 +213,8 @@ void fluidSim_update() {
 
 	// Predict future position
 	for(int i = 0; i < NUM_PARTICLES; i++){
-		//velocity[i] = VECTOR2_ADD(velocity[i], VECTOR2_SCALED(VECTOR2_DOWN, gravity * TIME_DELTA_S));
-		predicted_position[i] = VECTOR2_ADD(position[i], VECTOR2_SCALED(velocity[i], 100*TIME_DELTA_S));
+		velocity[i] = VECTOR2_ADD(velocity[i], VECTOR2_SCALED(VECTOR2_DOWN, gravity * TIME_DELTA_S));
+		predicted_position[i] = VECTOR2_ADD(position[i], VECTOR2_SCALED(velocity[i], 120*TIME_DELTA_S));
 	}
 
 	// Update densities and cell keys
@@ -204,8 +223,12 @@ void fluidSim_update() {
 
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		tVector2 pressure_force = calculate_pressure_force(i);
-		tVector2 pressure_acceleration = VECTOR2_SCALED(pressure_force, 1/particle_density[i]);
-		velocity[i] = VECTOR2_ADD(velocity[i], VECTOR2_SCALED(pressure_acceleration, TIME_DELTA_S));
+		tVector2 viscosity_force = calculate_viscosity_force(i);
+		tVector2 particle_acceleration = VECTOR2_SCALED(VECTOR2_ADD(pressure_force, viscosity_force), 1/particle_density[i]);
+		velocity[i] = VECTOR2_ADD(velocity[i], VECTOR2_SCALED(particle_acceleration, TIME_DELTA_S));
+		velocity[i] = VECTOR2_ADD(velocity[i], additional_force[i]);
+
+		additional_force[i] = VECTOR2_ZERO;
 	}
 
 	for(int i = 0; i < NUM_PARTICLES; i++){
@@ -240,9 +263,14 @@ void fluidSim_update() {
 
 void fluidSim_onClick(tVector2_int pos){
 	tVector2 local_pos = translate_global_position(pos);
-	double pressure = convert_density_to_pressure(calculate_density(local_pos));
-	printf("pressure = %f\n", pressure);
+	double density = calculate_density(local_pos);
+	printf("density = %f\n", density);
 
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		additional_force[i] = interaction_force(local_pos, interaction_radius, interaction_strenght, i);
+	}
+
+#if DRAW_CELLS_ON_MOUSE_CLICK
 	// Get all of the cells in a 3x3 grid around the local position
 	num_rects = 0;
 	tVector2_int cell = position_to_cell_coordinate(local_pos);
@@ -256,7 +284,6 @@ void fluidSim_onClick(tVector2_int pos){
 			printf("(%d, %d)\n", new_grid.x, new_grid.y);
 			
 			int cell_key = get_cell_key_from_grid_index(new_grid);
-			printf("CELL KEY = %d\n", cell_key);
 
 			int num_particles = 0;
 			for(int i = spacial_LUT_start_indeces[cell_key]; i < NUM_PARTICLES; i++){
@@ -265,8 +292,6 @@ void fluidSim_onClick(tVector2_int pos){
 				}
 				num_particles += 1;
 			}
-
-			printf("Num particles in cell = %d\n", num_particles);
 
 			// Find all cells with this cell key
 			for(int i = 0; i < spacial_LUT_cols; i++){
@@ -277,7 +302,6 @@ void fluidSim_onClick(tVector2_int pos){
 					};
 
 					if(cell_key == get_cell_key_from_grid_index(VECTOR2_TO_INT(cell_coord))){
-						printf("Found cell with cell key at (%d, %d)!\n", (int)cell_coord.x, (int)cell_coord.y);
 						// Draw a rectangle!
 						cell_coord = VECTOR2_ADD(cell_coord, VECTOR2_SCALED(bounding_box, -0.5));
 						//cell_coord = VECTOR2_ADD(cell_coord, VECTOR2_CREATE(SMOOTHING_RADIUS / 2, SMOOTHING_RADIUS / 2));
@@ -293,19 +317,10 @@ void fluidSim_onClick(tVector2_int pos){
 				}
 			}
 		}
-		printf("\n");
 	}
-
-	int num_index = 0;
-	for(int i = 0; i < num_spacial_LUT; i++){
-		if (spacial_LUT_start_indeces[i] != -1){
-			num_index += 1;
-		}
-	}
-
-	printf("num_index = %d\n", num_index);
 
 	rect_timeout = 2000;
+#endif
 }
 
 /**********************
@@ -347,6 +362,34 @@ static void resolve_edge_collision(tVector2* local_position, tVector2* local_vel
 	}
 }
 
+static tVector2 interaction_force(tVector2 input_pos, double radius, double strength, int particle_index){
+	tVector2 force = VECTOR2_ZERO;
+	tVector2 offset = VECTOR2_SUB(input_pos, position[particle_index]);
+	double sqr_distance = VECTOR2_SQR_MAG(offset);
+
+	if(sqr_distance < radius * radius){
+		double distance = sqrt(sqr_distance);
+
+		tVector2 dir_to_input_point = VECTOR2_ZERO;
+		if(distance > 0.00001){
+			dir_to_input_point= VECTOR2_SCALED(offset, 1/distance);
+		}
+
+		double centre_t = 1 - distance / radius;
+
+		force = VECTOR2_ADD(force, 
+			VECTOR2_SUB(
+				VECTOR2_SCALED(dir_to_input_point, strength),
+				velocity[particle_index]
+			)
+		);
+
+		force = VECTOR2_SCALED(force, centre_t);
+	}
+
+	return force;
+}
+
 static tVector2 get_random_direction(){
 	double x = (double)((double)rand()) / RAND_MAX;
 	double y = (double)((double)rand()) / RAND_MAX;
@@ -355,6 +398,7 @@ static tVector2 get_random_direction(){
 }
 
 static void update_densites(){
+	#pragma omp parallel for num_threads(20)
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		particle_density[i] = calculate_density(predicted_position[i]);
 	}
@@ -363,6 +407,7 @@ static void update_densites(){
 static double calculate_density(tVector2 sample_point){
 	double density = 0;
 
+	#pragma omp parallel for reduction(+:density) num_threads(20)
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		tVector2 diff = VECTOR2_SUB(position[i], sample_point);
 		double distance = VECTOR2_MAG(diff);
@@ -385,11 +430,11 @@ static double calculate_shared_pressure(double d1, double d2){
 	return (pressure1 + pressure2) / 2;
 }
 
-static tVector2 calculate_pressure_force(int particle_index){
+static void get_close_particles(int particle_index, int *particles, int* num_particles){
 	tVector2_int particle_cell_coord = particle_to_cell_coordinate(particle_index);
 	double sqr_radius = SMOOTHING_RADIUS * SMOOTHING_RADIUS;
 
-	tVector2 pressure_gradient = VECTOR2_ZERO;
+	*num_particles = 0;
 
 	for(int x = -1; x < 2; x++){
 		for(int y = -1; y < 2; y++){
@@ -416,31 +461,47 @@ static tVector2 calculate_pressure_force(int particle_index){
 
 				int other_particle_index = spacial_LUT[i].index;
 				tVector2 diff = VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]);
-				double sqr_distance = VECTOR2_SQR_MAG(VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]));
+				double sqr_distance = VECTOR2_SQR_MAG(diff);
 
 				if(sqr_distance < sqr_radius){
-					double distance = sqrt(sqr_distance);
-					tVector2 direction;
-					if(__glibc_unlikely(distance == 0)){
-						direction = get_random_direction();
-					}
-					else{
-						direction = VECTOR2_SCALED(diff, 1/distance);
-					}
-					double slope = smoothing_kernel_derivative(distance, SMOOTHING_RADIUS);
-					double density = particle_density[other_particle_index];
-					double shared_pressure = calculate_shared_pressure(density, particle_density[particle_index]);
-					double pressure_gradient_scaler = shared_pressure * slope * mass / density;
-					pressure_gradient = VECTOR2_ADD(pressure_gradient, VECTOR2_SCALED(direction, pressure_gradient_scaler));
+					particles[*num_particles] = other_particle_index;
+					*num_particles += 1;
 				}
 			}
 		}
+	}
+}
+
+static tVector2 calculate_pressure_force(int particle_index){
+	int close_particles[NUM_PARTICLES];
+	int num_particles;
+	get_close_particles(particle_index, close_particles, &num_particles);
+
+	tVector2 pressure_gradient = VECTOR2_ZERO;
+
+	for(int i = 0; i < num_particles; i++){
+		int other_particle_index = close_particles[i];
+
+		tVector2 diff = VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]);
+		double distance = VECTOR2_MAG(diff);
+		tVector2 direction;
+		if(__glibc_unlikely(distance == 0)){
+			direction = get_random_direction();
+		}
+		else{
+			direction = VECTOR2_SCALED(diff, 1/distance);
+		}
+		double slope = smoothing_kernel_derivative(distance, SMOOTHING_RADIUS);
+		double density = particle_density[other_particle_index];
+		double shared_pressure = calculate_shared_pressure(density, particle_density[particle_index]);
+		double pressure_gradient_scaler = shared_pressure * slope * mass / density;
+		pressure_gradient = VECTOR2_ADD(pressure_gradient, VECTOR2_SCALED(direction, pressure_gradient_scaler));
 	}
 
 	return pressure_gradient;
 }
 
-static double smoothing_kernel(double distance, float radius){
+static double smoothing_kernel(double distance, double radius){
 	if(distance >= radius){
 		return 0;
 	}
@@ -460,6 +521,45 @@ static double smoothing_kernel_derivative(double distance, double radius){
 
 	double scale = 12 / (radius_4 * NUM_PI);
 	return (distance - radius) * scale;
+}
+
+static tVector2 calculate_viscosity_force(int particle_index){
+	int close_particles[NUM_PARTICLES];
+	int num_particles;
+	get_close_particles(particle_index, close_particles, &num_particles);
+
+	tVector2 force = VECTOR2_ZERO;
+
+	for(int i = 0; i < num_particles; i++){
+		int other_particle_index = close_particles[i];
+
+		tVector2 diff = VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]);
+		double distance = VECTOR2_MAG(diff);
+
+		double influence = viscosity_kernel(distance, SMOOTHING_RADIUS);
+
+		force = VECTOR2_ADD(force, 
+			VECTOR2_SUB(
+				velocity[other_particle_index],
+				velocity[particle_index]
+			)
+		);
+		force = VECTOR2_SCALED(force, influence);
+	}
+
+	return VECTOR2_SCALED(force, viscosity_strenght);
+}
+
+static double viscosity_kernel(double distance, double radius){
+	if(distance > radius){
+		return 0;
+	}
+
+	double radius_8 = radius * radius * radius * radius * radius * radius * radius * radius;
+
+	double value = radius * radius - distance * distance;
+	double volume = (NUM_PI * radius_8) / 4;
+	return value * value * value / volume;
 }
 
 static int get_cell_key_from_particle(int particle_index){

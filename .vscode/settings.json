@@ -64,6 +64,7 @@
 	"drawing.h": "c",
 	"common.h": "c",
 	"stdint.h": "c",
-	"fluidsim.h": "c"
+	"fluidsim.h": "c",
+	"random": "c"
 }
 }
