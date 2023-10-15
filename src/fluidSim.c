@@ -23,6 +23,8 @@
 #define SMOOTHING_RADIUS (0.3)
 #define VISCOSITY_RADIUS (1)
 
+#define MAX_VISCOSITY (10)
+
 #define SCREEN_SCALING (100)
 
 /**
@@ -558,6 +560,10 @@ static tVector2 calculate_viscosity_force(int particle_index){
 			)
 		);
 		force = VECTOR2_SCALED(f, influence);
+	}
+
+	if(VECTOR2_MAG(force) > MAX_VISCOSITY){
+		force = VECTOR2_SCALED(force, MAX_VISCOSITY/VECTOR2_MAG(force));
 	}
 
 	return VECTOR2_SCALED(force, viscosity_strenght);
