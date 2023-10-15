@@ -9,6 +9,8 @@
  *      DEFINES
  *********************/
 
+#define NUM_ALLOCATED_POINTS (1000000)
+
 /**********************
  *      TYPEDEFS
  **********************/
@@ -23,11 +25,18 @@ static void set_color_a(tColor_a color);
 
 static void draw_circle(int32_t centreX, int32_t centreY, int32_t radius);
 
+static void add_circle_point(SDL_Point* point);
+
 /**********************
  *  STATIC VARIABLES
  **********************/
 
 static SDL_Renderer* drawing_Renderer;
+
+// All circles should have the same color
+static tColor circle_color;
+static SDL_Point circle_points[NUM_ALLOCATED_POINTS];
+static int num_circle_points = 0;
 
 /**********************
  *      MACROS
@@ -60,6 +69,12 @@ void drawing_clearScreen(){
 }
 
 void drawing_drawScreen(){
+	if(num_circle_points > 0){
+		set_color(circle_color);
+		SDL_RenderDrawPoints(drawing_Renderer, circle_points, num_circle_points);
+	}
+	num_circle_points = 0;
+
 	SDL_RenderPresent(drawing_Renderer);
 }
 
@@ -68,7 +83,7 @@ void drawing_delay(uint32_t delay){
 }
 
 void drawing_drawCircle(tVector2_int pos, int32_t radius, tColor color){
-	set_color(color);
+	memcpy(&circle_color, &color, sizeof(tColor));
 	draw_circle(pos.x, pos.y, radius);
 }
 
@@ -108,8 +123,17 @@ static void draw_circle(int32_t centreX, int32_t centreY, int32_t radius){
             int dy = radius - h; // vertical offset
             if ((dx*dx + dy*dy) <= (radius * radius))
             {
-                SDL_RenderDrawPoint(drawing_Renderer, centreX + dx, centreY + dy);
+				SDL_Point point = {
+					.x = centreX + dx,
+					.y = centreY + dy
+				};
+				add_circle_point(&point);
             }
         }
     }
+}
+
+static void add_circle_point(SDL_Point* point){
+	memcpy(&circle_points[num_circle_points], point, sizeof(SDL_Point));
+	num_circle_points += 1;
 }

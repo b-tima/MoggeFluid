@@ -26,7 +26,7 @@
  * 	If Set to 1, the starting positions will be randomized in the bounding box.
  * 	If set to 0, the starting positions will be in a grid in the center.
  */
-#define RANDOMIZE_STARTING_POSITIONS (0)
+#define RANDOMIZE_STARTING_POSITIONS (1)
 
 /**
  * 	If set to 1, the simulation will not be started after initialiation.
@@ -80,12 +80,13 @@ static void update_cell_keys();
  **********************/
 
 const double gravity = 10;
-const double collision_damping = 0.6;
-const double target_density = 1;
-const double pressure_multiplier = 1;
+const double collision_damping = 0.9;
+const double target_density = 0.1;
+const double pressure_multiplier = 0.01;
 const double mass = 1;
 
 static tVector2 position[NUM_PARTICLES];
+static tVector2 predicted_position[NUM_PARTICLES];
 static tVector2 velocity[NUM_PARTICLES];
 static double particle_density[NUM_PARTICLES];
 
@@ -94,6 +95,7 @@ const tVector2 bounding_box = {
 	.y = SCREEN_HEIGHT / SCREEN_SCALING
 };
 
+// TODO: Improve hashing to increase performance
 static cell_key_pair* spacial_LUT;
 static int spacial_LUT_rows;
 static int spacial_LUT_cols;
@@ -112,6 +114,7 @@ static int* spacial_LUT_start_indeces;
 void fluidSim_init() {
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		particle_density[i] = 0;
+		velocity[i] = VECTOR2_ZERO;
 	}
 
 	spacial_LUT_rows = ceil(bounding_box.x / SMOOTHING_RADIUS);
@@ -177,6 +180,14 @@ void fluidSim_update() {
 #endif
 
 #if !DONT_START_SIMULARITON
+
+	// Predict future position
+	for(int i = 0; i < NUM_PARTICLES; i++){
+		// This is where we should add gravity...
+		predicted_position[i] = VECTOR2_ADD(position[i], VECTOR2_SCALED(velocity[i], 100*TIME_DELTA_S));
+	}
+
+	// Update densities and cell keys
 	update_cell_keys();
 	update_densites();
 
@@ -193,6 +204,7 @@ void fluidSim_update() {
 
 		draw_particle(position[i]);
 	}
+
 #else
 	for(int i = 0; i < NUM_PARTICLES; i++){
 		draw_particle(position[i]);
@@ -259,7 +271,7 @@ static tVector2 get_random_direction(){
 
 static void update_densites(){
 	for(int i = 0; i < NUM_PARTICLES; i++){
-		particle_density[i] = calculate_density(position[i]);
+		particle_density[i] = calculate_density(predicted_position[i]);
 	}
 }
 
@@ -294,6 +306,7 @@ static tVector2 calculate_pressure_force(int particle_index){
 
 	tVector2 pressure_gradient = VECTOR2_ZERO;
 
+	// TODO: this doesnt work!
 	for(int x = -1; x < 2; x++){
 		for(int y = -1; y < 2; y++){
 			tVector2_int grid = (tVector2_int){
@@ -308,17 +321,17 @@ static tVector2 calculate_pressure_force(int particle_index){
 			}
 
 			for(int i = cell_start_index; i < NUM_PARTICLES; i++){
-				if(spacial_LUT[i].key != key){
+				if(spacial_LUT[cell_start_index].key != key){
 					break;
 				}
 
-				if(spacial_LUT[i].index == particle_index){
+				if(spacial_LUT[cell_start_index].index == particle_index){
 					continue;
 				}
 
-				int other_particle_index = spacial_LUT[i].index;
-				tVector2 diff = VECTOR2_SUB(position[other_particle_index], position[particle_index]);
-				double sqr_distance = VECTOR2_SQR_MAG(VECTOR2_SUB(position[other_particle_index], position[particle_index]));
+				int other_particle_index = spacial_LUT[cell_start_index].index;
+				tVector2 diff = VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]);
+				double sqr_distance = VECTOR2_SQR_MAG(VECTOR2_SUB(predicted_position[other_particle_index], predicted_position[particle_index]));
 
 				if(sqr_distance < sqr_radius){
 					double distance = sqrt(sqr_distance);
@@ -372,8 +385,8 @@ static int get_cell_key_from_grid_index(tVector2_int grid){
 }
 
 static tVector2_int position_to_cell_coordinate(int particle_index){
-	uint32_t x = (uint32_t)floor(position[particle_index].x / SMOOTHING_RADIUS);
-	uint32_t y = (uint32_t)floor(position[particle_index].y / SMOOTHING_RADIUS);
+	uint32_t x = (uint32_t)floor(predicted_position[particle_index].x / SMOOTHING_RADIUS);
+	uint32_t y = (uint32_t)floor(predicted_position[particle_index].y / SMOOTHING_RADIUS);
 
 	return (tVector2_int){
 		.x = x,
